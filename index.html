@@ -69,30 +69,46 @@ const DATA={"دلالات الألفاظ": [["🌱 التأسيس", [["عاد ا
 const ids=["login","home","ladder","quiz","result","mylevel","teacher"],E=x=>document.getElementById(x);
 let ACCOUNT={type:"practice",name:"قارئ أُفُق",className:""};
 function showStudentLogin(){E("studentLogin").classList.toggle("hide")}
-function normName(v){return String(v||"").trim().replace(/\s+/g," ").toLowerCase()}function accountId(){return ACCOUNT.type==="practice"?"practice":btoa(unescape(encodeURIComponent((ACCOUNT.className+"|"+normName(ACCOUNT.name)).trim()))).replace(/=/g,"")}
+function normName(v){return String(v||"").trim().replace(/\s+/g," ").toLowerCase()}function accountId(){return ACCOUNT.type==="practice"?"practice":(ACCOUNT.studentId||btoa(unescape(encodeURIComponent((ACCOUNT.className+"|"+normName(ACCOUNT.name)).trim()))).replace(/=/g,""))}async function sha256hex(s){const b=new TextEncoder().encode(s),h=await crypto.subtle.digest("SHA-256",b);return Array.from(new Uint8Array(h)).map(x=>x.toString(16).padStart(2,"0")).join("")}
 function progressPrefix(){return "ofuq|"+accountId()+"|"}
+function legacyAccountId(){
+  if(ACCOUNT.type!=="student"||!ACCOUNT.code)return null;
+  return btoa(unescape(encodeURIComponent((ACCOUNT.className+"|"+ACCOUNT.name+"|"+ACCOUNT.code).trim()))).replace(/=/g,"")
+}
 function migrateLegacyProgress(){
   if(ACCOUNT.type!=="student")return;
-  const stable=progressPrefix(), aliases={"المفردات":"دلالات الألفاظ","الفهم القرائي":"استيعاب المقروء"};
-  const name=normName(ACCOUNT.name), cls=ACCOUNT.className;
-  for(let i=0;i<localStorage.length;i++){
-    const key=localStorage.key(i); if(!key||!key.startsWith("ofuq|"))continue;
-    const val=localStorage.getItem(key); if(val===null||isNaN(Number(val)))continue;
-    Object.entries(aliases).forEach(([oldDom,newDom])=>{
-      const needle="|"+oldDom+"|"; if(key.includes(needle)){
-        const stage=key.split(needle)[1];
-        if(/^[0-4]$/.test(stage)){
-          const dest=stable+newDom+"|"+stage, cur=localStorage.getItem(dest);
-          if(cur===null||Number(val)>Number(cur))localStorage.setItem(dest,val);
-        }
-      }
-    });
-  }
+  const oldId=legacyAccountId(); if(!oldId)return;
+  const oldPrefix="ofuq|"+oldId+"|", newPrefix=progressPrefix();
+  const aliases={"دلالات الألفاظ":"دلالات الألفاظ","استيعاب المقروء":"استيعاب المقروء","المفردات":"دلالات الألفاظ","الفهم القرائي":"استيعاب المقروء"};
+  Object.entries(aliases).forEach(([oldDom,newDom])=>{
+    for(let i=0;i<5;i++){
+      const v=localStorage.getItem(oldPrefix+oldDom+"|"+i);
+      if(v===null)continue;
+      const dest=newPrefix+newDom+"|"+i,cur=localStorage.getItem(dest);
+      if(cur===null||Number(v)>Number(cur))localStorage.setItem(dest,v);
+    }
+  });
 }
+
 function enterHome(){E("whoName").textContent="يا "+ACCOUNT.name;let wc=E("whoClass");if(wc)wc.textContent=ACCOUNT.className||"قارئ أُفُق";go("home")}
 function practiceLogin(){ACCOUNT={type:"practice",name:"قارئ أُفُق",className:""};sessionStorage.setItem("ofuqAccount",JSON.stringify(ACCOUNT));enterHome()}
-function practiceGate(){const saved=localStorage.getItem("ofuqPracticePin");if(!saved){alert("حساب قارئ أُفُق جاهز للحماية. سيُثبت رمز الدخول في النسخة النهائية قبل النشر.");return;}const pin=prompt("أدخلي رمز حساب قارئ أُفُق:");if(pin===null)return;if(pin===saved){practiceLogin()}else{alert("رمز الدخول غير صحيح.")}}
-function studentLogin(){let c=E("classSel").value,n=E("studentName").value.trim(),code=E("studentCode").value.trim();if(!c||!n||code.length<3){alert("اختاري الفصل، واكتبي الاسم ورمز الدخول (3 أحرف أو أرقام على الأقل).");return}ACCOUNT={type:"student",name:n,className:c,code};sessionStorage.setItem("ofuqAccount",JSON.stringify(ACCOUNT));registerLocalStudent();migrateLegacyProgress();ensureStudentAuth().finally(()=>enterHome())}
+async function practiceGate(){const pin=prompt("أدخلي رمز حساب قارئ أُفُق:");if(pin===null||!pin.trim())return;try{await ensureStudentAuth();const key=await sha256hex("practice|"+pin.trim());const doc=await db.collection("practiceKeys").doc(key).get();if(doc.exists)practiceLogin();else alert("رمز الدخول غير صحيح.")}catch(e){console.warn(e);alert("تعذر التحقق من الرمز الآن. حاولي مرة أخرى.")}}
+async function studentLogin(){
+ let c=E("classSel").value,n=E("studentName").value.trim(),code=E("studentCode").value.trim();
+ if(!c||!n||code.length<3){alert("اختاري الفصل، واكتبي الاسم ورمز الدخول.");return}
+ try{
+   await ensureStudentAuth();
+   const key=await sha256hex(c+"|"+normName(n)+"|"+code);
+   const doc=await db.collection("studentAccounts").doc(key).get();
+   if(!doc.exists){alert("الاسم أو رمز الدخول غير صحيح. تأكدي من الفصل والبيانات.");return}
+   const x=doc.data();
+   ACCOUNT={type:"student",name:x.name,className:x.className,code:code,studentId:doc.id};
+   migrateLegacyProgress();
+   ACCOUNT.code="";
+   sessionStorage.setItem("ofuqAccount",JSON.stringify(ACCOUNT));
+   registerLocalStudent();enterHome();
+ }catch(e){console.warn(e);alert("تعذر التحقق من الحساب الآن. تأكدي من الاتصال وحاولي مرة أخرى.")}
+}
 try{let a=JSON.parse(sessionStorage.getItem("ofuqAccount")||"null");if(a&&a.name){ACCOUNT=a;migrateLegacyProgress()}}catch(e){}
 function logout(){sessionStorage.removeItem("ofuqAccount");ACCOUNT={type:"practice",name:"قارئ أُفُق",className:""};go("login")}
 function go(x){ids.forEach(y=>E(y).classList.toggle("hide",y!==x));if(x==="teacher")renderTeacher();window.scrollTo(0,0)}
