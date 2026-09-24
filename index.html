@@ -88,22 +88,24 @@ async function teacherGate(){
     const provider=new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({prompt:"select_account"});
     const result=await auth.signInWithPopup(provider);
-    const u=result.user;
-    alert("تم تسجيل دخول المعلمة بنجاح 🌷\nالآن سيظهر حسابك في Firebase > Authentication > Users.");
-    go("teacher");
-  }catch(err){
-    if(err && (err.code==="auth/popup-blocked" || err.code==="auth/operation-not-supported-in-this-environment")){
-      try{
-        const provider=new firebase.auth.GoogleAuthProvider();
-        sessionStorage.setItem("ofuqTeacherRedirect","1");
-        await auth.signInWithRedirect(provider);
-      }catch(e){alert("تعذر فتح تسجيل Google. جرّبي من رابط المنصة المنشور على GitHub.");}
-    }else if(!(err && err.code==="auth/popup-closed-by-user")){
-      alert("تعذر تسجيل دخول المعلمة عبر Google. افتحي النسخة من رابط HTTPS المنشور ثم حاولي مرة أخرى.");
+    if(result && result.user){
+      alert("تم تسجيل دخول المعلمة بنجاح 🌷\nالآن سيظهر حسابك في Firebase > Authentication > Users.");
+      go("teacher");
     }
+  }catch(err){
+    const code=(err&&err.code)||"";
+    if(code==="auth/popup-closed-by-user" || code==="auth/cancelled-popup-request") return;
+    if(code==="auth/unauthorized-domain"){
+      alert("نحتاج إضافة areejedu.github.io إلى Authorized domains في Firebase مرة واحدة فقط.");
+      return;
+    }
+    if(code==="auth/popup-blocked"){
+      alert("Safari منع نافذة تسجيل Google. فعّلي السماح بالنوافذ المنبثقة مؤقتًا ثم اضغطي «المعلمة» مرة أخرى.");
+      return;
+    }
+    alert("تعذر تسجيل Google الآن. رمز الخطأ: "+(code||"غير معروف"));
   }
 }
-auth.getRedirectResult().then(r=>{if(r&&r.user&&sessionStorage.getItem("ofuqTeacherRedirect")){sessionStorage.removeItem("ofuqTeacherRedirect");alert("تم تسجيل دخول المعلمة بنجاح 🌷");go("teacher");}}).catch(()=>{});
 function renderTeacher(){let st=JSON.parse(localStorage.getItem("ofuqLocalStudents")||"{}"),at=JSON.parse(localStorage.getItem("ofuqLocalAttempts")||"[]"),arr=Object.entries(st);let cls=E("teacherClass")?E("teacherClass").value:"all",term=E("teacherSearch")?E("teacherSearch").value.trim():"",dom=E("teacherDomain")?E("teacherDomain").value:"all",stage=E("teacherStage")?E("teacherStage").value:"all";let viewAttempts=at.filter(a=>(dom==="all"||a.domain===dom)&&(stage==="all"||String(a.stage)===stage));E("countA").textContent=arr.filter(([id,x])=>x.className==="سادس أ").length;E("countB").textContent=arr.filter(([id,x])=>x.className==="سادس ب").length;E("attemptCount").textContent=viewAttempts.length;E("avgScore").textContent=viewAttempts.length?Math.round(viewAttempts.reduce((a,b)=>a+b.percent,0)/viewAttempts.length)+"٪":"—";let filtered=arr.filter(([id,x])=>(cls==="all"||x.className===cls)&&(!term||x.name.includes(term)));let rows=filtered.map(([id,x])=>{let mine=viewAttempts.filter(a=>a.id===id),last=mine[mine.length-1],best=mine.length?Math.max(...mine.map(a=>a.percent)):null,done=new Set(mine.map(a=>a.domain+"|"+a.stage)).size,total=10,progress=Math.round(done/total*100);return `<div class="stat studentCard"><div class="teacherCardTitle"><b>${escapeHtml(x.name)}</b><span class="tag">${escapeHtml(x.className)}</span></div><div class="stageMeta">${mine.length?`آخر تدريب: ${escapeHtml(last.domain)} • ${DATA[last.domain][last.stage][0]} • ${last.percent}٪ | أفضل نتيجة: ${best}٪ | المحاولات: ${mine.length}`:`لم تسجل نتيجة بعد`}</div><div class="progressMini"><i style="width:${progress}%"></i></div><div class="tiny">التقدم في المراحل: ${done} من ${total}</div></div>`}).join("");E("teacherRows").innerHTML=rows||'<div class="stat">لا توجد نتائج مطابقة.</div>'}
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
 function exportTeacherCSV(){let at=JSON.parse(localStorage.getItem("ofuqLocalAttempts")||"[]");if(!at.length){alert("لا توجد نتائج لتصديرها بعد.");return}let rows=[["الطالبة","الفصل","المجال","المرحلة","النسبة","التاريخ"],...at.map(a=>[a.name,a.className,a.domain,DATA[a.domain][a.stage][0],a.percent,new Date(a.at).toLocaleString("ar-SA")])];let csv="\ufeff"+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");let blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download="نتائج_أفق_الإتقان.csv";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
