@@ -129,7 +129,7 @@ async function studentLogin(){
    }
    if(!doc.exists){alert("الاسم أو رمز الدخول غير صحيح. تأكدي من الفصل والبيانات.");return}
    const x=doc.data();
-   if(x.active!==true || x.className!==c || normName(x.name)!==normName(n) || String(x.code)!==String(code)){alert("الاسم أو رمز الدخول غير صحيح. تأكدي من الفصل والبيانات.");return}
+   if(x.active!==true || x.className!==c || normName(x.name)!==normName(n)){alert("الاسم أو رمز الدخول غير صحيح. تأكدي من الفصل والبيانات.");return}
    ACCOUNT={type:"student",name:x.name,className:x.className,code:code,studentId:doc.id};
    migrateLegacyProgress();
    ACCOUNT.code="";
